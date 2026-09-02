@@ -496,7 +496,6 @@
                 (/^https?:\/\//i.test(b.link) ? ' target="_blank" rel="noopener noreferrer"' : '') +
                 '>' + esc(b.linkText || 'more') + '</a>';
         }
-        html += '<span class="sb-spacer"></span>';
         if (b.dismissible) html += '<button class="sb-x" type="button" aria-label="Dismiss">&times;</button>';
         target.innerHTML = html;
 

@@ -27,6 +27,11 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* The UA's [hidden]{display:none} loses to any author `display` rule, which
+ * silently un-hid the password field. `hidden` is the show/hide mechanism all
+ * over this page, so make it authoritative. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -145,7 +150,10 @@ a { color: inherit; text-decoration: none; }
     display: flex;
     align-items: center;
     gap: 10px;
+    border: 1px solid var(--rule);
+    padding: 6px 10px;
 }
+.search-row:focus-within { border-color: var(--accent-dk); }
 .search-row .prompt { color: var(--accent); flex: none; }
 
 #search {
@@ -232,14 +240,14 @@ a { color: inherit; text-decoration: none; }
 
 .star {
     flex: none;
-    width: 26px;
+    width: 30px;
     background: none;
     border: 0;
     color: var(--faint);
     font: inherit;
     font-family: var(--mono);
-    font-size: 13px;
-    line-height: inherit;
+    font-size: 17px;
+    line-height: 1;
     padding: 3px 0;
     cursor: pointer;
     text-align: left;
@@ -487,40 +495,75 @@ footer a:hover { color: var(--accent); }
 /* ---- public banner ---------------------------------------------------- */
 
 .sitebanner {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    gap: 12px;
     flex-wrap: wrap;
-    padding: 7px var(--gut);
-    font-size: 13px;
+    /* room on both sides so centred text stays centred next to the X */
+    padding: 14px 46px;
+    font-size: 15px;
+    line-height: 1.45;
+    text-align: center;
     border-bottom: 1px solid var(--rule);
     background: var(--bg-soft);
     color: var(--fg);
 }
 .sitebanner[hidden] { display: none; }
-.sitebanner .sb-spacer { flex: 1 1 auto; }
-.sitebanner .sb-link { text-decoration: underline; white-space: nowrap; }
+.sitebanner .sb-text { font-weight: 500; }
+.sitebanner .sb-link {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    white-space: nowrap;
+}
 .sitebanner .sb-x {
-    flex: none;
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
     background: none;
     border: 0;
     color: inherit;
     font: inherit;
     font-family: var(--mono);
-    font-size: 16px;
+    font-size: 18px;
     line-height: 1;
-    padding: 0 4px;
+    padding: 2px 6px;
     cursor: pointer;
-    opacity: 0.6;
+    opacity: 0.45;
 }
 .sitebanner .sb-x:hover { opacity: 1; }
 
-/* the style names are the contract with data/banner.json */
-.sitebanner.s-info  { border-left: 3px solid #4d8fd1; }
-.sitebanner.s-warn  { border-left: 3px solid var(--accent); }
-.sitebanner.s-alert { border-left: 3px solid #d14d4d; color: #ffdede; }
-.sitebanner.s-good  { border-left: 3px solid #4fb26a; }
-.sitebanner.s-plain { border-left: 3px solid var(--rule); color: var(--dim); }
+/* Loud enough to notice, quiet enough to live with: a tinted wash and a
+ * weighted bottom rule, rather than a saturated fill that fights the page.
+ * These names are the contract with data/banner.json. */
+.sitebanner.s-info {
+    background: rgba(77, 143, 209, 0.10);
+    border-bottom: 2px solid #4d8fd1;
+}
+.sitebanner.s-warn {
+    background: rgba(255, 176, 0, 0.10);
+    border-bottom: 2px solid var(--accent);
+}
+.sitebanner.s-alert {
+    background: rgba(209, 77, 77, 0.12);
+    border-bottom: 2px solid #d14d4d;
+    color: #ffe4e4;
+}
+.sitebanner.s-good {
+    background: rgba(79, 178, 106, 0.10);
+    border-bottom: 2px solid #4fb26a;
+}
+.sitebanner.s-plain {
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--rule);
+    color: var(--dim);
+}
+
+@media (max-width: 560px) {
+    .sitebanner { font-size: 14px; padding: 12px 38px; }
+}
 
 /* ---- editor panel ----------------------------------------------------- */
 
