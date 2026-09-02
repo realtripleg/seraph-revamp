@@ -2427,14 +2427,21 @@
 
         if (!reduceMotion && !window.matchMedia('(pointer: coarse)').matches) {
             var gridEl = document.getElementById('gamesGrid');
-            gridEl.addEventListener('mousemove', function(e) {
+            var glowTicking = false;
+            var glowX = 0, glowY = 0;
+
+            // Measuring every card on each mousemove forces a synchronous
+            // layout per card. Coalesce to one pass per frame, matching the
+            // scroll handlers above.
+            function paintCardGlow() {
+                glowTicking = false;
                 var cards = gridEl.querySelectorAll('.game-card:not(.hidden-by-filter)');
                 cards.forEach(function(card) {
                     var rect = card.getBoundingClientRect();
                     var cx = rect.left + rect.width / 2;
                     var cy = rect.top + rect.height / 2;
-                    var dx = e.clientX - cx;
-                    var dy = e.clientY - cy;
+                    var dx = glowX - cx;
+                    var dy = glowY - cy;
                     var dist = Math.sqrt(dx * dx + dy * dy);
                     var threshold = 120;
                     if (dist < threshold) {
@@ -2444,6 +2451,15 @@
                         card.style.borderColor = '';
                     }
                 });
+            }
+
+            gridEl.addEventListener('mousemove', function(e) {
+                glowX = e.clientX;
+                glowY = e.clientY;
+                if (!glowTicking) {
+                    glowTicking = true;
+                    window.requestAnimationFrame(paintCardGlow);
+                }
             });
             gridEl.addEventListener('mouseleave', function() {
                 var cards = gridEl.querySelectorAll('.game-card');
