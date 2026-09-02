@@ -1,10 +1,10 @@
 {
-  "enabled": false,
-  "text": "",
-  "style": "info",
+  "enabled": true,
+  "text": "SERAPH v2 REVAMP IS HERE! New games coming soon!",
+  "style": "alert",
   "link": "",
   "linkText": "",
-  "dismissible": true,
+  "dismissible": false,
   "expires": "",
-  "updated": ""
+  "updated": "2026-09-02T10:40:05.876Z"
 }
