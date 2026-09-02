@@ -98,9 +98,6 @@
             ' games / no ads, no sign-up';
     }
 
-    function syncTesting(name) {
-        $('testing').classList.toggle('on', !!name && name.toLowerCase() === 'gunner');
-    }
 
     /* -- name prompt ---------------------------------------------------- */
 
@@ -108,17 +105,53 @@
     var nameInput = $('nameInput');
     var nameErr = $('nameError');
 
-    function submitName() {
+    function isAdminName(name) {
+        return name.toLowerCase() === AUTH.user;
+    }
+
+    async function submitName() {
         var name = nameInput.value.replace(/[<>"'&]/g, '').trim();
         if (name.length < 2) {
             nameErr.textContent = 'at least 2 characters';
             return;
         }
+
+        if (isAdminName(name)) {
+            if (!hasCrypto()) {
+                // WebCrypto is secure-context only. Refuse rather than fall
+                // back to a weaker check that would only look like security.
+                nameErr.textContent = 'unlocking needs https - not available on this connection';
+                return;
+            }
+            var pw = $('pwInput').value;
+            if (!pw) { nameErr.textContent = 'password required'; return; }
+
+            nameErr.textContent = 'checking...';
+            $('nameBtn').disabled = true;
+            var key = null;
+            try { key = await deriveKey(pw); }
+            catch (e) { nameErr.textContent = 'could not verify'; $('nameBtn').disabled = false; return; }
+            $('nameBtn').disabled = false;
+            $('pwInput').value = '';
+
+            if (!key) { nameErr.textContent = 'wrong password'; return; }
+            adminKey = key;
+            setAdmin(true);
+            await restoreToken();
+        } else {
+            setAdmin(false);
+        }
+
         nameErr.textContent = '';
         save('playerName', name);
         nameOverlay.hidden = true;
         showGreeting(name);
-        syncTesting(name);
+    }
+
+    async function restoreToken() {
+        var blob = load('ghTokenEnc');
+        if (!blob || !adminKey) return;
+        try { ghToken = await openToken(blob, adminKey); } catch (e) { ghToken = null; }
     }
 
     function promptName() {
@@ -276,7 +309,7 @@
     if (saved) {
         nameOverlay.hidden = true;
         showGreeting(saved);
-        syncTesting(saved);
+        setAdmin(false);   // unlocking is per-session; the password is asked again
     } else {
         nameOverlay.hidden = false;
         setTimeout(function () { nameInput.focus(); }, 200);
@@ -360,6 +393,288 @@
         });
     });
     top.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+
+    /* -- admin gate ----------------------------------------------------- */
+    /*
+     * The password is never stored, here or anywhere. What ships is a random
+     * salt and a PBKDF2-SHA256 verifier; the browser recomputes it at login.
+     *
+     * Be clear-eyed about what this buys: the verifier is public, so a short
+     * numeric password can be ground down offline. That is why the GitHub
+     * token is NOT persisted by default - unlocking the panel on its own
+     * yields an editor with no credentials in it. If you do opt to remember
+     * the token, it is AES-GCM encrypted under a key derived from the same
+     * password, so a localStorage dump alone will not reveal it.
+     */
+
+    var AUTH = {
+        user: 'gunner',
+        salt: '1e67e40d73fab88f8157e4e981bb1fd8',
+        iters: 1200000,
+        verify: '3f7e04c38af0540cb38721debeddc89d4ed9e95644c22d0283c8754d2b278c7b'
+    };
+
+    var REPO = 'realtripleg/seraph-revamp';
+    var BANNER_PATH = 'data/banner.json';
+
+    var adminKey = null;    // AES key, held in memory only while unlocked
+    var ghToken = null;     // GitHub PAT, in memory unless explicitly remembered
+
+    function hexToBuf(h) {
+        var a = new Uint8Array(h.length / 2);
+        for (var i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16);
+        return a;
+    }
+    function bufToHex(b) {
+        return [].map.call(new Uint8Array(b), function (x) {
+            return x.toString(16).padStart(2, '0');
+        }).join('');
+    }
+    function sameHex(a, b) {
+        if (a.length !== b.length) return false;
+        var diff = 0;
+        for (var i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+        return diff === 0;
+    }
+    function hasCrypto() {
+        return !!(window.crypto && window.crypto.subtle);
+    }
+
+    async function deriveKey(pw) {
+        var base = await crypto.subtle.importKey(
+            'raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+        var bits = await crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt: hexToBuf(AUTH.salt), iterations: AUTH.iters, hash: 'SHA-256' },
+            base, 256);
+        var digest = await crypto.subtle.digest('SHA-256', bits);
+        if (!sameHex(bufToHex(digest), AUTH.verify)) return null;
+        return crypto.subtle.importKey('raw', bits, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    }
+
+    async function sealToken(tok, key) {
+        var iv = crypto.getRandomValues(new Uint8Array(12));
+        var ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key,
+            new TextEncoder().encode(tok));
+        return bufToHex(iv) + ':' + bufToHex(ct);
+    }
+    async function openToken(blob, key) {
+        var bits = blob.split(':');
+        var pt = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: hexToBuf(bits[0]) }, key, hexToBuf(bits[1]));
+        return new TextDecoder().decode(pt);
+    }
+
+    function setAdmin(on) {
+        $('adminBtn').hidden = !on;
+        $('testing').classList.toggle('on', on);
+        if (!on) { adminKey = null; ghToken = null; }
+    }
+
+    /* -- public banner -------------------------------------------------- */
+
+    var STYLE_LABELS = ['info', 'warn', 'alert', 'good', 'plain'];
+
+    function bannerDismissed(b) {
+        return load('bannerSeen') === (b.updated || b.text);
+    }
+
+    function paintBanner(b, previewEl) {
+        var target = previewEl || $('banner');
+        var live = !previewEl;
+
+        var expired = b.expires && new Date(b.expires).getTime() < Date.now();
+        if (live && (!b.enabled || !b.text || expired || bannerDismissed(b))) {
+            target.hidden = true;
+            return;
+        }
+        target.hidden = false;
+        target.className = 'sitebanner s-' + (b.style || 'info');
+
+        var html = '<span class="sb-text">' + esc(b.text || '(no message)') + '</span>';
+        if (b.link) {
+            html += ' <a class="sb-link" href="' + esc(b.link) + '"' +
+                (/^https?:\/\//i.test(b.link) ? ' target="_blank" rel="noopener noreferrer"' : '') +
+                '>' + esc(b.linkText || 'more') + '</a>';
+        }
+        html += '<span class="sb-spacer"></span>';
+        if (b.dismissible) html += '<button class="sb-x" type="button" aria-label="Dismiss">&times;</button>';
+        target.innerHTML = html;
+
+        if (live && b.dismissible) {
+            target.querySelector('.sb-x').addEventListener('click', function () {
+                save('bannerSeen', b.updated || b.text);
+                target.hidden = true;
+            });
+        }
+    }
+
+    var liveBanner = null;
+    // Guarded: a missing banner file, an offline visitor, or an environment
+    // without fetch must not take the rest of the page down with it.
+    if (typeof fetch === 'function') {
+        try {
+            fetch(BANNER_PATH, { cache: 'no-store' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (b) { if (b) { liveBanner = b; paintBanner(b); } })
+                .catch(function () { /* no banner file yet - not an error */ });
+        } catch (e) { /* ignore */ }
+    }
+
+    /* -- banner editor -------------------------------------------------- */
+
+    function draftFromForm() {
+        return {
+            enabled: $('bEnabled').checked,
+            text: $('bText').value,
+            style: $('bStyle').value,
+            link: $('bLink').value.trim(),
+            linkText: $('bLinkText').value.trim(),
+            dismissible: $('bDismiss').checked,
+            expires: $('bExpires').value,
+            updated: new Date().toISOString()
+        };
+    }
+
+    function formFromDraft(b) {
+        $('bEnabled').checked = !!b.enabled;
+        $('bText').value = b.text || '';
+        $('bStyle').value = b.style || 'info';
+        $('bLink').value = b.link || '';
+        $('bLinkText').value = b.linkText || '';
+        $('bDismiss').checked = b.dismissible !== false;
+        $('bExpires').value = b.expires || '';
+    }
+
+    function refreshPreview() {
+        var d = draftFromForm();
+        paintBanner(d, $('bPreview'));
+        $('bJson').value = JSON.stringify(d, null, 2);
+    }
+
+    function openEditor() {
+        formFromDraft(liveBanner || {});
+        refreshPreview();
+        $('bStatus').textContent = '';
+        $('bannerPanel').hidden = false;
+    }
+
+    function utf8Base64(str) {
+        var bytes = new TextEncoder().encode(str);
+        var bin = '';
+        for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+    }
+
+    async function publish(json) {
+        var api = 'https://api.github.com/repos/' + REPO + '/contents/' + BANNER_PATH;
+        var headers = {
+            'Authorization': 'Bearer ' + ghToken,
+            'Accept': 'application/vnd.github+json'
+        };
+        var sha;
+        var cur = await fetch(api, { headers: headers, cache: 'no-store' });
+        if (cur.status === 401 || cur.status === 403) throw new Error('token rejected (401/403)');
+        if (cur.ok) sha = (await cur.json()).sha;
+
+        var res = await fetch(api, {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify({
+                message: 'update site banner',
+                content: utf8Base64(json),
+                sha: sha
+            })
+        });
+        if (!res.ok) {
+            var detail = '';
+            try { detail = (await res.json()).message || ''; } catch (e) {}
+            throw new Error('HTTP ' + res.status + (detail ? ' - ' + detail : ''));
+        }
+        return res.json();
+    }
+
+    /* -- admin + editor events ------------------------------------------ */
+
+    // the password field only exists once the name looks like the account
+    nameInput.addEventListener('input', function () {
+        var on = isAdminName(nameInput.value.trim());
+        $('pwField').hidden = !on;
+        if (!on) $('pwInput').value = '';
+    });
+    $('pwInput').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') submitName();
+    });
+
+    $('adminBtn').addEventListener('click', openEditor);
+    $('bClose').addEventListener('click', function () { $('bannerPanel').hidden = true; });
+    $('bannerPanel').addEventListener('click', function (e) {
+        if (e.target === $('bannerPanel')) $('bannerPanel').hidden = true;
+    });
+
+    ['bEnabled', 'bText', 'bStyle', 'bLink', 'bLinkText', 'bDismiss', 'bExpires']
+        .forEach(function (id) {
+            $(id).addEventListener('input', refreshPreview);
+            $(id).addEventListener('change', refreshPreview);
+        });
+
+    $('bCopy').addEventListener('click', function () {
+        $('bJson').select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        if (navigator.clipboard) navigator.clipboard.writeText($('bJson').value).catch(function () {});
+        $('bStatus').textContent = ok || navigator.clipboard
+            ? 'copied - paste into data/banner.json and commit'
+            : 'select the JSON above and copy it';
+    });
+
+    $('bDownload').addEventListener('click', function () {
+        var blob = new Blob([$('bJson').value], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'banner.json';
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        $('bStatus').textContent = 'downloaded - replace data/banner.json with it';
+    });
+
+    $('bForget').addEventListener('click', function () {
+        ghToken = null;
+        try { localStorage.removeItem('ghTokenEnc'); } catch (e) {}
+        document.cookie = 'ghTokenEnc=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+        $('ghTokenInput').value = '';
+        $('bStatus').textContent = 'token forgotten on this device';
+    });
+
+    $('bPublish').addEventListener('click', async function () {
+        var typed = $('ghTokenInput').value.trim();
+        if (typed) ghToken = typed;
+        if (!ghToken) {
+            $('bStatus').textContent = 'paste a GitHub token first (fine-grained, this repo, contents: read+write)';
+            return;
+        }
+
+        var json = $('bJson').value;
+        try { JSON.parse(json); }
+        catch (e) { $('bStatus').textContent = 'the JSON is malformed - fix it before publishing'; return; }
+
+        $('bPublish').disabled = true;
+        $('bStatus').textContent = 'publishing...';
+        try {
+            await publish(json);
+            liveBanner = JSON.parse(json);
+            paintBanner(liveBanner);
+            $('bStatus').textContent = 'committed - live in a minute or two once Pages rebuilds';
+
+            if ($('bRemember').checked && adminKey) {
+                save('ghTokenEnc', await sealToken(ghToken, adminKey));
+                $('bStatus').textContent += ' / token saved encrypted on this device';
+            }
+            $('ghTokenInput').value = '';
+        } catch (err) {
+            $('bStatus').textContent = 'failed: ' + err.message;
+        }
+        $('bPublish').disabled = false;
+    });
 
     /* -- cookie notice -------------------------------------------------- */
 

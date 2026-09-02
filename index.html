@@ -16,12 +16,15 @@
 </head>
 <body>
 
+    <div class="sitebanner" id="banner" hidden></div>
+
     <nav class="bar" aria-label="Status">
         <div class="bar-in">
             <span id="clock"></span>
             <button class="ver" id="version" aria-haspopup="dialog">v2.0.0<span class="new">new</span></button>
             <span class="bar-spacer"></span>
             <span class="countdown" id="countdown" aria-live="polite"></span>
+            <button class="icon-btn" id="adminBtn" hidden>banner</button>
             <button class="icon-btn" id="editName" aria-label="Change your name">name</button>
         </div>
     </nav>
@@ -97,6 +100,11 @@
                 <label for="nameInput" class="sr-only">Your name</label>
                 <input type="text" id="nameInput" placeholder="your name" autocomplete="off" maxlength="24">
             </div>
+            <div class="field" id="pwField" hidden>
+                <span class="prompt" aria-hidden="true">#</span>
+                <label for="pwInput" class="sr-only">Password</label>
+                <input type="password" id="pwInput" placeholder="password" autocomplete="current-password">
+            </div>
             <div class="err" id="nameError" role="alert"></div>
             <button class="btn btn-primary" id="nameBtn" type="button">enter</button>
         </div>
@@ -129,6 +137,72 @@
                 </ul>
             </div>
             <button class="btn" id="logClose" type="button">close</button>
+        </div>
+    </div>
+
+
+    <div class="overlay" id="bannerPanel" role="dialog" aria-modal="true" aria-labelledby="bpHead" hidden>
+        <div class="panel panel-wide">
+            <h2 id="bpHead">site banner</h2>
+            <p>shown to everyone who visits. changes go live once Pages rebuilds.</p>
+
+            <div class="preview-wrap">
+                <div class="preview-label">preview</div>
+                <div class="sitebanner" id="bPreview"></div>
+            </div>
+
+            <div class="form">
+                <label class="ck"><input type="checkbox" id="bEnabled"> show the banner</label>
+
+                <label class="fl" for="bText">message</label>
+                <textarea id="bText" rows="2" placeholder="what everyone should see"></textarea>
+
+                <label class="fl" for="bStyle">style</label>
+                <select id="bStyle">
+                    <option value="info">info</option>
+                    <option value="warn">warn</option>
+                    <option value="alert">alert</option>
+                    <option value="good">good</option>
+                    <option value="plain">plain</option>
+                </select>
+
+                <label class="fl" for="bLink">link (optional)</label>
+                <input type="url" id="bLink" placeholder="https://...">
+
+                <label class="fl" for="bLinkText">link label</label>
+                <input type="text" id="bLinkText" placeholder="more">
+
+                <label class="fl" for="bExpires">hide after (optional)</label>
+                <input type="datetime-local" id="bExpires">
+
+                <label class="ck"><input type="checkbox" id="bDismiss" checked> visitors can dismiss it</label>
+            </div>
+
+            <label class="fl" for="bJson">banner.json</label>
+            <textarea id="bJson" rows="9" spellcheck="false" readonly></textarea>
+
+            <div class="row-btns">
+                <button class="btn" id="bCopy" type="button">copy</button>
+                <button class="btn" id="bDownload" type="button">download</button>
+            </div>
+
+            <div class="pub">
+                <label class="fl" for="ghTokenInput">github token</label>
+                <input type="password" id="ghTokenInput" placeholder="github_pat_..." autocomplete="off">
+                <p class="hint">
+                    fine-grained token, this repo only, <b>contents: read and write</b>.
+                    it is never written to the site - it stays in this browser.
+                    leave "remember" off on a shared computer.
+                </p>
+                <label class="ck"><input type="checkbox" id="bRemember"> remember it on this device (encrypted)</label>
+                <div class="row-btns">
+                    <button class="btn btn-primary" id="bPublish" type="button">publish</button>
+                    <button class="btn" id="bForget" type="button">forget token</button>
+                    <button class="btn" id="bClose" type="button">close</button>
+                </div>
+            </div>
+
+            <div class="err" id="bStatus" role="status"></div>
         </div>
     </div>
 
